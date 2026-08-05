@@ -1,0 +1,87 @@
+name: Cluster Add-ons (ALB Controller + External Secrets)
+
+on:
+
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/cluster-addons/**"
+      - ".github/workflows/cluster-addons.yml"
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/cluster-addons/**"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_IN_AUTOMATION: true
+
+jobs:
+
+  terraform:
+    name: Deploy Cluster Add-ons (ALB Controller + External Secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+
+    defaults:
+      run:
+        working-directory: apps/cluster-addons
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify AWS Identity
+        run: aws sts get-caller-identity
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Providers
+        run: terraform providers
+
+      - name: Terraform Format
+        run: terraform fmt -recursive -check
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -parallelism=20 \
+            -input=false \
+            -lock-timeout=10m \
+            -no-color \
+            -out=tfplan
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
+        run: |
+          terraform apply \
+            -parallelism=20 \
+            -input=false \
+            -auto-approve \
+            -no-color \
+            tfplan

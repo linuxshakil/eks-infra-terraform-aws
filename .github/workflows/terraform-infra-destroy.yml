@@ -1,0 +1,101 @@
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DESTROY to destroy the infrastructure'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_IN_AUTOMATION: true
+
+jobs:
+
+  destroy:
+    if: github.event.inputs.confirm == 'DESTROY'
+    name: Terraform Destroy
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Destroy Plan
+        run: |
+          terraform plan \
+            -destroy \
+            -parallelism=20 \
+            -input=false \
+            -lock-timeout=10m \
+            -no-color \
+            -out=destroy.tfplan
+
+      - name: Show Destroy Plan
+        run: terraform show -no-color destroy.tfplan
+
+      - name: Terraform Destroy
+        run: |
+          terraform apply \
+            -parallelism=20 \
+            -input=false \
+            -auto-approve \
+            -no-color \
+            destroy.tfplan | tee terraform-destroy.log
+
+      - name: Upload Destroy Log
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-destroy-log
+          path: infra/terraform-destroy.log
+          retention-days: 30
+
+      - name: Verify EKS Cluster Removal
+        continue-on-error: true
+        run: |
+          echo "========== EKS Clusters =========="
+          aws eks list-clusters
+
+      - name: Destroy Summary
+        run: |
+          {
+            echo "# Terraform Destroy"
+            echo ""
+            echo "## Region"
+            echo "${{ secrets.AWS_REGION }}"
+            echo ""
+            echo "## Branch"
+            echo "${{ github.ref_name }}"
+            echo ""
+            echo "## Status"
+            echo "Infrastructure Destroy Completed"
+          } >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: CronJob
+
+metadata:
+  name: pollapp-backup
+  namespace: app
+
+spec:
+
+  schedule: "0 2 * * *"
+
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+  jobTemplate:
+    spec:
+      template:
+        spec:
+
+          restartPolicy: Never
+          serviceAccountName: rds-backup
+
+          containers:
+
+          - name: backup
+
+            # Get the ECR repo URL after infra apply with
+            # "terraform output ecr_backup_repository_url" and replace it here
+            image: 123456789012.dkr.ecr.ap-south-1.amazonaws.com/backup-images:v1
+
+            imagePullPolicy: Always
+
+            env:
+
+            - name: MODE
+              value: "backup"
+
+            - name: DB_HOST
+              value: "REPLACE_WITH_RDS_ENDPOINT"
+
+            - name: DB_USER
+              value: "pollapp"
+
+            - name: DB_NAME
+              value: "pollapp"
+
+            - name: BACKUP_BUCKET
+              value: "eks-prod-demo-001-sql-backups"

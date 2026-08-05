@@ -1,0 +1,106 @@
+name: Build and Push live-poll-app
+
+# This workflow is the entire CI/CD story for the application from
+# here on. It never runs Terraform and it never touches a database
+# secret. All it does is:
+#   1. Build the Docker image from app/
+#   2. Push it to ECR, tagged with the git commit SHA
+#   3. Update the image tag in gitops/live-poll-app/kustomization.yaml
+#   4. Commit that one-line change back to this repo
+#
+# ArgoCD (running in the cluster, installed by apps/cluster-addons)
+# is watching gitops/live-poll-app on this same branch. The moment
+# step 4's commit lands, ArgoCD notices the new tag and rolls out a
+# new Deployment revision — no human, and no Terraform run, in the
+# loop for a normal app deploy.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - ".github/workflows/build-and-push.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to commit the updated image tag back
+  id-token: write    # needed for OIDC auth to AWS
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: live-poll-app
+
+jobs:
+
+  build-and-push:
+    name: Build, Push, Update Manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      ############################################################
+      # Same OIDC pattern as every other workflow in this repo —
+      # this job only gets permission to push to ECR, nothing more.
+      # It never has, and never needs, any AWS Secrets Manager or
+      # RDS permission — those belong only to the in-cluster IRSA
+      # roles that the running pod uses.
+      ############################################################
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Image
+        working-directory: app
+        run: |
+          docker build -t "$ECR_REPOSITORY:${{ github.sha }}" .
+
+      - name: Tag and Push to ECR
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          docker tag "$ECR_REPOSITORY:${{ github.sha }}" "$REGISTRY/$ECR_REPOSITORY:${{ github.sha }}"
+          docker tag "$ECR_REPOSITORY:${{ github.sha }}" "$REGISTRY/$ECR_REPOSITORY:latest"
+          docker push "$REGISTRY/$ECR_REPOSITORY:${{ github.sha }}"
+          docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+
+      - name: Set up Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Update Image Tag in gitops manifest
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        working-directory: gitops/live-poll-app
+        run: |
+          kustomize edit set image "$REGISTRY/$ECR_REPOSITORY=$REGISTRY/$ECR_REPOSITORY:${{ github.sha }}"
+
+      - name: Commit Updated Manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gitops/live-poll-app/kustomization.yaml
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "ci: deploy live-poll-app @ ${{ github.sha }}"
+          git push
+
+      - name: Summary
+        run: |
+          {
+            echo "# live-poll-app build"
+            echo ""
+            echo "Image pushed: \`$ECR_REPOSITORY:${{ github.sha }}\`"
+            echo ""
+            echo "ArgoCD will pick up this change automatically within a few minutes."
+          } >> $GITHUB_STEP_SUMMARY

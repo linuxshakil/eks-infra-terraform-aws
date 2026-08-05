@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+
+metadata:
+  name: pollapp-restore
+  namespace: app
+
+spec:
+  template:
+    spec:
+
+      restartPolicy: Never
+      serviceAccountName: rds-backup
+
+      containers:
+
+      - name: restore
+
+        image: 123456789012.dkr.ecr.ap-south-1.amazonaws.com/backup-images:v1
+
+        imagePullPolicy: Always
+
+        env:
+
+        - name: MODE
+          value: "restore"
+
+        - name: DB_HOST
+          value: "REPLACE_WITH_RDS_ENDPOINT"
+
+        - name: DB_USER
+          value: "pollapp"
+
+        - name: DB_NAME
+          value: "pollapp"
+
+        - name: BACKUP_BUCKET
+          value: "eks-prod-demo-001-sql-backups"
