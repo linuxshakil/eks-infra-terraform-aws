@@ -68,7 +68,7 @@ output "node_role_arn" {
 }
 
 output "app_role_arn" {
-  description = "IRSA role that the live-poll-app ServiceAccount will assume (bound to the Kubernetes SA via annotation in gitops/live-poll-app/serviceaccount.yaml)"
+  description = "IRSA role that the live-poll-app ServiceAccount will assume (bound to the Kubernetes SA via annotation in live-poll-app-deploy's base/serviceaccount.yaml)"
   value       = module.irsa.app_role_arn
 }
 

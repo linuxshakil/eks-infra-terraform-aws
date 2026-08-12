@@ -8,12 +8,17 @@
 # "platform" — it changes rarely and needs the safety of a
 # reviewed plan/apply.
 #
-# The application itself (a separate git repo entirely — see
-# var.git_repo_url — at some gitops/overlays/<env> path) is
-# it changes on every code push, sometimes many times a day.
-# ArgoCD is a GitOps controller that runs inside the cluster,
-# continuously watches a path in a git repo, and makes the
-# cluster's actual state match whatever is committed there —
+# The application is split across two OTHER repos entirely,
+# neither of which this repo (eks-infra-terraform) contains:
+#   - live-poll-app          — application source code
+#   - live-poll-app-deploy   — GitOps manifests (var.git_repo_url
+#                               points here; var.gitops_path picks
+#                               overlays/dev or overlays/prod)
+#
+# Application code changes on every push, sometimes many times a
+# day. ArgoCD is a GitOps controller that runs inside the cluster,
+# continuously watches a path in live-poll-app-deploy, and makes
+# the cluster's actual state match whatever is committed there —
 # no `terraform apply` involved for app deploys at all.
 #
 # ArgoCD manages no cloud secrets of its own. It only applies

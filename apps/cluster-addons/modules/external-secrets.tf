@@ -4,7 +4,7 @@
 # Same chart and pattern as the GCP version — only the
 # provider name changes: instead of the GCP Secret Manager
 # provider, this Operator's "aws" (Secrets Manager) provider
-# will be used by the SecretStore in gitops/live-poll-app.
+# will be used by the SecretStore manifests in the live-poll-app-deploy repo.
 ############################################################
 
 resource "kubernetes_namespace" "external_secrets" {

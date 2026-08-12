@@ -18,7 +18,7 @@ variable "vpc_id" {
 }
 
 variable "git_repo_url" {
-  description = "The live-poll-app repo's git URL — a SEPARATE repo from this one. ArgoCD in the prod cluster watches gitops/overlays/prod in it."
+  description = "The live-poll-app-deploy repo's git URL — GitOps manifests only, a third repo separate from both eks-infra-terraform and live-poll-app. ArgoCD in the prod cluster watches overlays/prod in it."
   type        = string
 }
 

@@ -2,7 +2,7 @@
 # AWS Load Balancer Controller
 #
 # This Helm chart watches the Kubernetes "Ingress" objects used
-# used in gitops/live-poll-app and automatically provisions an Application
+# used in the live-poll-app-deploy repo and automatically provisions an Application
 # Load Balancer (ALB) — it does the same job as GKE's built-in
 # GCE Ingress controller, except on EKS you have to install it
 # yourself.

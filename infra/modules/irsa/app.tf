@@ -8,7 +8,7 @@
 # ${project}.svc.id.goog[app/app-sa]).
 #
 # This role is created by Terraform, but nothing in
-# gitops/live-poll-app ever needs to know its ARN value in
+# live-poll-app-deploy ever needs to know its ARN value in
 # order to *use* it — the ServiceAccount just needs to be
 # annotated with it once. See the README section "Secret
 # Management: Terraform vs GitHub Actions vs ArgoCD" for how

@@ -7,6 +7,8 @@ cluster_name = "prod-eks-cluster"
 # Copy this from "terraform output vpc_id" after infra/envs/prod has been applied
 vpc_id = "vpc-REPLACE_ME"
 
-# The live-poll-app repo — a separate GitHub repo from this one
-git_repo_url         = "https://github.com/yourusername/live-poll-app.git"
+# The live-poll-app-deploy repo — GitOps manifests only, no app
+# source code and no Terraform. A THIRD repo, separate from both
+# this one and from live-poll-app (which holds only app source).
+git_repo_url         = "https://github.com/yourusername/live-poll-app-deploy.git"
 git_target_revision = "main"

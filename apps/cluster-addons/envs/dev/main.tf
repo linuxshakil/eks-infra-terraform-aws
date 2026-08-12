@@ -17,5 +17,5 @@ module "cluster_addons" {
   external_secrets_role_arn  = data.terraform_remote_state.infra.outputs.external_secrets_role_arn
   git_repo_url                = var.git_repo_url
   git_target_revision         = var.git_target_revision
-  gitops_path                  = "gitops/overlays/dev"
+  gitops_path                  = "overlays/dev"
 }
