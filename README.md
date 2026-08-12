@@ -12,7 +12,7 @@ If you already know all the concepts and just want the commands, you can skim th
 - [Part 1 — Concepts You Need, Explained Simply](#part-1--concepts-you-need-explained-simply)
 - [Part 2 — The Three Repos and How They Talk to Each Other](#part-2--the-three-repos-and-how-they-talk-to-each-other)
 - [Part 3 — Install the Tools](#part-3--install-the-tools)
-- [Part 4 — Set Up Two AWS Accounts](#part-4--set-up-two-aws-accounts)
+- [Part 4 — Set Up Two AWS Accounts, With Okta SSO for Human Access](#part-4--set-up-two-aws-accounts-with-okta-sso-for-human-access)
 - [Part 5 — Set Up GitHub (Repos, Environments, Secrets)](#part-5--set-up-github-repos-environments-secrets)
 - [Part 6 — Deploy the Dev Environment, Step by Step](#part-6--deploy-the-dev-environment-step-by-step)
 - [Part 7 — Wire Up ArgoCD and Deploy the App (Dev)](#part-7--wire-up-argocd-and-deploy-the-app-dev)
@@ -101,6 +101,8 @@ Read this part even if some of it feels obvious — later steps refer back to th
 
 > **What is OIDC, and why does it matter here?**
 > A way for GitHub Actions to prove its identity to AWS and get temporary permissions, without ever storing a long-lived AWS password/key as a GitHub secret. This matters because a leaked long-lived AWS key is a permanent problem until manually revoked; a leaked OIDC-issued temporary credential expires on its own within the hour.
+>
+> **This is the *machine* side of "no long-lived credentials."** There's a separate, matching concept for the *human* side — **IAM Identity Center**, federated to an external identity provider like **Okta** — covered in Part 4. Both exist for the same reason (avoid ever creating a static AWS access key that could leak), just for two different kinds of actor: OIDC for GitHub Actions, Identity Center for people.
 
 
 ---
@@ -165,43 +167,85 @@ If any of these commands say "command not found," go back and reinstall that too
 
 ---
 
-## Part 4 — Set Up Two AWS Accounts
+## Part 4 — Set Up Two AWS Accounts, With Okta SSO for Human Access
 
-You need **two AWS accounts** — genuinely two separate accounts, not two regions or two sets of resources in one account. If you've never made more than one AWS account before:
+You need **two AWS accounts** — genuinely two separate accounts, not two regions or two sets of resources in one account.
 
-1. Go to [aws.amazon.com](https://aws.amazon.com) and create your first account — this will be your **dev/test account**. You'll need an email address and a credit/debit card (AWS has a free tier, but some resources in this project, like the database and load balancer, do cost a small amount — see [Part 14](#part-14--cost-estimate)).
-2. For the **second (prod) account**, the easiest path if you're doing this alone is [AWS Organizations](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_create.html) — from your first account, go to the AWS Organizations console and click "Add an AWS account." This creates a second, fully separate account without needing a second credit card or email (it can reuse your first account's billing).
-3. Note down each account's **12-digit Account ID** (visible in the top-right of the AWS Console, under your username) — you'll need to tell them apart throughout this guide. From here on, this guide calls them **the dev account** and **the prod account**.
+There are two completely different kinds of "who can do what" in this project, and they use two different mechanisms — don't mix them up:
 
-### Create an IAM user for the very first setup step
+> **Humans** (you, your teammates) get access through **IAM Identity Center**, federated to **Okta** — you log in through a browser, get a temporary session, and never hold a long-lived AWS password or access key.
+>
+> **Machines** (GitHub Actions) get access through **IAM OIDC** — covered already in the concept box in Part 1, and set up in Part 6. This is completely separate from Identity Center and doesn't need Okta at all.
 
-In **each** account, you need one IAM user with enough permissions to run the one-time `bootstrap` step (everything after that uses OIDC, no long-lived credentials at all — see the concept box on OIDC above).
+This part covers the human side.
 
-1. In the AWS Console, switch to the dev account. Go to **IAM → Users → Create user**.
-2. Name it something like `terraform-bootstrap`.
-3. Attach the **AdministratorAccess** policy directly (this is a one-time setup user — you'll delete its credentials once bootstrap has run successfully).
-4. Go to that user → **Security credentials → Create access key** → choose "Command Line Interface (CLI)" → save the **Access Key ID** and **Secret Access Key** somewhere safe (a password manager, not a text file in this repo!).
-5. Repeat steps 1-4 in the **prod account**.
+### Step 4.1 — Create the AWS Organization and the two accounts
 
-You now have two access-key pairs — one per account. Configure them as named profiles on your machine so you can easily switch between accounts:
+1. Go to [aws.amazon.com](https://aws.amazon.com) and create your first account. Any account you create first automatically becomes an **AWS Organizations management account** the moment you enable Organizations on it.
+2. In the AWS Console, go to **AWS Organizations** → **Add an AWS account** → create your second account (this reuses your first account's billing — no second credit card needed). Name the two accounts clearly, e.g. `myproject-dev` and `myproject-prod`.
+3. Note down each account's **12-digit Account ID** (top-right of the console, under your username) — you'll need these throughout this guide as **the dev account** and **the prod account**.
+
+> **Why does this matter for Identity Center?** IAM Identity Center is enabled once, on the *management* account, and from there it can grant access into *every* account in the Organization — including both dev and prod — through a single Okta login. This is the whole point: one login, two accounts, clean separation of who can do what in each.
+
+### Step 4.2 — Add the AWS Identity Center app in Okta
+
+You said you already have a free Okta account — good, this reuses it entirely, no new signup needed.
+
+1. In the **Okta Admin Console**, go to **Applications → Browse App Catalog**, search for **"AWS IAM Identity Center"**, and click **Add Integration**.
+2. Follow Okta's setup wizard — it will show you a **metadata URL** or downloadable **XML metadata file**. Keep this tab open; you'll need it in the next step.
+3. This one app in Okta will handle both SSO login *and* automatically keeping your AWS user/group list in sync (via SCIM) — you won't need to manually create users on the AWS side later.
+
+### Step 4.3 — Enable Identity Center in AWS and connect it to Okta
+
+1. In the AWS Console (on the **management account**), go to **IAM Identity Center** → **Enable**.
+2. Go to **Settings → Identity source → Change identity source** → choose **External identity provider**.
+3. Paste in the Okta metadata from Step 4.2 (AWS will in turn give you *its own* metadata/URLs to paste back into Okta's app configuration — this is a two-way handshake, do both sides).
+4. Back in Okta's app settings, turn on **SCIM provisioning** and generate an API token for it (Identity Center gives you a SCIM endpoint URL + access token to paste into Okta for this).
+
+Once both sides are connected, any Okta group you assign to this app shows up automatically inside AWS Identity Center — no manual user creation in AWS at all.
+
+### Step 4.4 — Create Okta groups and assign AWS access
+
+1. In Okta, create two groups: `AWS-Dev-Admins` and `AWS-Prod-Admins`. Add yourself to both (add teammates later, to whichever group matches what they should be able to touch).
+2. In AWS Identity Center, go to **Permission sets → Create permission set** → choose the pre-built **AdministratorAccess** managed permission set (this is enough for a learning project; a real production setup would use a narrower custom permission set for the prod group).
+3. Go to **AWS accounts**, select your **dev account** → **Assign users or groups** → pick `AWS-Dev-Admins` → assign the `AdministratorAccess` permission set.
+4. Repeat for the **prod account** with `AWS-Prod-Admins`.
+
+### Step 4.5 — Log in and configure the AWS CLI with SSO (no access keys, anywhere)
+
+Identity Center gives you a personal **AWS access portal URL** (looks like `https://d-xxxxxxxxxx.awsapps.com/start`) — find it on the Identity Center dashboard.
 
 ```bash
-aws configure --profile dev-account
-# paste the dev account's Access Key ID / Secret Access Key when prompted
-# region: ap-south-1 (or whichever region you prefer)
-
-aws configure --profile prod-account
-# paste the prod account's Access Key ID / Secret Access Key
+aws configure sso --profile dev-account
 ```
 
-Test each one:
+You'll be prompted for:
+- **SSO start URL**: the access portal URL above
+- **SSO region**: the region you enabled Identity Center in
+- Then your browser opens, you log in through **Okta** (not an AWS username/password — Okta is now the front door), and you pick the dev account + `AdministratorAccess` role
+- Finish the prompts (default output format `json` is fine)
+
+Repeat for prod:
+
+```bash
+aws configure sso --profile prod-account
+```
+
+Log in for real (session tokens expire after several hours, and you'll re-run this whenever they do):
+
+```bash
+aws sso login --profile dev-account
+aws sso login --profile prod-account
+```
+
+Test both:
 
 ```bash
 aws sts get-caller-identity --profile dev-account
 aws sts get-caller-identity --profile prod-account
 ```
 
-Each command should print an `Account` field with a different 12-digit number — if both print the *same* account number, you set up the profiles against the same account by mistake; go back and check.
+Each should print a different 12-digit `Account` number. **Notice what you did *not* do anywhere in this entire part: create an IAM user, or generate an access key.** Every command in the rest of this guide that needs human AWS access uses `--profile dev-account` or `--profile prod-account`, exactly as set up here — and if your SSO session ever expires, the fix is always just `aws sso login --profile <name>` again, never a new key.
 
 ---
 
@@ -237,15 +281,15 @@ For the `prod` environment in `eks-infra-terraform` (and later, in `live-poll-ap
 
 ### Add secrets to `eks-infra-terraform`
 
-Under the `dev` environment, add these secrets (**Settings → Environments → dev → Add secret**):
+Under the `dev` environment, add this secret (**Settings → Environments → dev → Add secret**):
 
 | Secret name | Value |
 |---|---|
 | `AWS_REGION` | e.g. `ap-south-1` |
-| `AWS_BOOTSTRAP_ACCESS_KEY_ID` | the dev account IAM user's Access Key ID from Part 4 |
-| `AWS_BOOTSTRAP_SECRET_ACCESS_KEY` | the dev account IAM user's Secret Access Key from Part 4 |
 
-Under the `prod` environment, add the same three secrets, but using the **prod account's** IAM user credentials instead.
+Do the same under the `prod` environment.
+
+Notice there's no access-key secret here at all — `bootstrap` (Part 6.1) always runs from your own machine using your Okta-backed SSO session from Part 4, never from CI. Everything that *does* run in CI (`infra`, `apps/cluster-addons`) uses the OIDC role that `bootstrap` creates, not any key.
 
 You'll add one more secret to each environment (`AWS_ROLE_ARN`) after Part 6 — it doesn't exist yet because `terraform apply` hasn't created it.
 
@@ -255,7 +299,15 @@ You'll add one more secret to each environment (`AWS_ROLE_ARN`) after Part 6 —
 
 Everything from here runs on your own computer first (so you can see exactly what's happening), using the `dev-account` AWS profile you set up in Part 4. Later, GitHub Actions will do these same steps automatically.
 
-### Step 6.1 — Bootstrap (creates the "foundation": a place for Terraform to store its state, and a secure identity for GitHub Actions)
+### Step 6.1 — Bootstrap
+
+> **📍 This is the step that creates the S3 state bucket.** If you were looking for "where does the Terraform state backend bucket get created" — it's right here, in `bootstrap/envs/dev`'s `terraform apply`, via the `aws_s3_bucket` resource inside `bootstrap/modules/core/main.tf`. Nothing before this step creates any AWS resource at all. `bootstrap` exists specifically to create two things: (1) this S3 bucket, which `infra` and `apps/cluster-addons` will store their own state in, and (2) the OIDC identity that lets GitHub Actions authenticate without a stored key. Both are prerequisites every other Terraform project in this repo depends on.
+
+First, make sure your SSO session is active (sessions expire after a few hours — if a command below fails with a credentials/expiry error, just re-run this):
+
+```bash
+aws sso login --profile dev-account
+```
 
 ```bash
 cd bootstrap/envs/dev
@@ -271,12 +323,12 @@ terraform init
 ```bash
 terraform plan -var="aws_profile=dev-account"
 ```
-> **What just happened?** Terraform compared "what you've asked for in the `.tf` files" against "what actually exists in AWS" (nothing yet) and printed a list of what it *would* create, without creating anything. Read through it — you should see an S3 bucket, an IAM OIDC provider, and an IAM role being planned.
+> **What just happened?** Terraform compared "what you've asked for in the `.tf` files" against "what actually exists in AWS" (nothing yet) and printed a list of what it *would* create, without creating anything. Read through it — you should see an S3 bucket, an IAM OIDC provider, and an IAM role being planned. **The S3 bucket is the state backend bucket** — this plan is your last chance to check its name before it's created for real.
 
 ```bash
 terraform apply -var="aws_profile=dev-account"
 ```
-> Type `yes` when prompted. This is the step that actually creates things in AWS. Wait for it to finish — it should take under a minute.
+> Type `yes` when prompted. This is the step that actually creates things in AWS — including that S3 bucket. Wait for it to finish — it should take under a minute.
 
 When it's done, run:
 
@@ -284,7 +336,9 @@ When it's done, run:
 terraform output
 ```
 
-You'll see two values: `terraform_state_bucket` and `github_actions_role_arn`. **Copy the `github_actions_role_arn` value** — go back to GitHub, **Settings → Environments → dev**, and add it as a new secret named `AWS_ROLE_ARN`.
+You'll see two values: `terraform_state_bucket` (the bucket you just created — this is the answer to "where's my state bucket," confirmed) and `github_actions_role_arn`. **Copy the `github_actions_role_arn` value** — go back to GitHub, **Settings → Environments → dev**, and add it as a new secret named `AWS_ROLE_ARN`.
+
+> **Why does bootstrap run from your own machine instead of GitHub Actions?** Every other Terraform project in this repo (`infra`, `apps/cluster-addons`) runs via CI using the OIDC role — but that role doesn't exist yet the first time `bootstrap` runs; `bootstrap` is what *creates* it. There's a chicken-and-egg problem here that can't be automated away, so `bootstrap` is the one project in this repo that's meant to be run by a human, using their own Okta-backed SSO session from Part 4, not by CI. It also only ever needs to run once per account — you'll come back to it again only if you ever need to fully tear down and recreate the state backend.
 
 ### Step 6.2 — Point the backend files at your real bucket name
 
@@ -520,7 +574,8 @@ Once prod's cluster add-ons are applied and `overlays/prod/` is filled in, re-ru
 eks-infra-terraform/
 ├── bootstrap/
 │   ├── modules/core/                # shared logic: S3 state bucket + GitHub OIDC provider + role
-│   └── envs/dev/  envs/prod/        # one root module per AWS account — run once each, ever
+│   └── envs/dev/  envs/prod/        # run once each, by hand, using your Okta-backed SSO session
+│                                     # (no CI workflow for this — see Part 6.1 for why)
 │
 ├── infra/
 │   ├── modules/                     # shared: network, iam, eks, irsa, rds, secrets-manager, ecr, backup
@@ -534,10 +589,10 @@ eks-infra-terraform/
 │
 └── .github/workflows/
     ├── _terraform-apply.yml          # shared logic used by every other workflow below
-    ├── bootstrap-dev.yml   bootstrap-prod.yml
     ├── infra-dev.yml        infra-prod.yml
     ├── cluster-addons-dev.yml   cluster-addons-prod.yml
     └── destroy-dev.yml      destroy-prod.yml
+    # (no bootstrap-*.yml — bootstrap runs locally, by hand, via SSO; see Part 6.1)
 ```
 
 Every `envs/<env>` folder is a fully independent Terraform root module — its own state file, its own AWS account, its own `terraform apply`. The only thing dev and prod ever share is the `modules/` code.
@@ -612,7 +667,8 @@ Or trigger `destroy-dev.yml` (or `destroy-prod.yml`) from the Actions tab, type 
 | ArgoCD shows `Missing` for the app's Deployment | No image has been pushed to ECR yet | Complete Part 9 |
 | Pod is stuck in `CrashLoopBackOff` | Usually a database connection problem | `kubectl logs -n app deploy/live-poll-app` and check the `DB_HOST` value matches your real RDS endpoint |
 | `git push` from a GitHub Actions workflow fails with a permission error | The scoped Personal Access Token for cross-repo commits (in `live-poll-app`) is missing, expired, or has the wrong permission | See `live-poll-app`'s README, "Cross-Repo Write Access" section |
-| Both AWS profiles show the same Account ID | You configured both `aws configure` profiles against the same account | Go back to Part 4 and re-run `aws configure --profile prod-account` with the *prod* account's own credentials |
+| Both AWS profiles show the same Account ID | You ran `aws configure sso --profile prod-account` but picked the dev account during the browser login step by mistake | Re-run `aws configure sso --profile prod-account` from Part 4.5 and make sure you select the *prod* account when the browser prompts you |
+| A `terraform` command fails with a credentials/token expired error | Your SSO session timed out (they last a few hours) | `aws sso login --profile dev-account` (or `prod-account`), then re-run the same `terraform` command |
 
 ---
 
@@ -620,6 +676,12 @@ Or trigger `destroy-dev.yml` (or `destroy-prod.yml`) from the Actions tab, type 
 
 | Term | Plain-English meaning |
 |---|---|
+| **Okta** | An external identity provider (IdP) — where your actual username/password/MFA lives. AWS trusts Okta to vouch for who you are, instead of AWS managing its own separate password for you |
+| **IAM Identity Center** | AWS's service for giving humans temporary, federated access across multiple AWS accounts through a single external login (here, Okta), instead of separate IAM users with passwords/keys per account |
+| **SSO (Single Sign-On)** | Logging in once (through Okta) and getting access to multiple systems (multiple AWS accounts) without logging in separately to each |
+| **SAML** | The technical protocol Okta and AWS use to hand off "this person is who they say they are" during SSO login |
+| **SCIM** | The protocol that keeps Okta's groups/users automatically in sync with AWS Identity Center, so you don't have to manually recreate them on both sides |
+| **Permission Set** | In Identity Center, a named bundle of AWS permissions (like `AdministratorAccess`) that you assign to an Okta group for a specific AWS account |
 | **State** (Terraform) | A file that tracks what Terraform has already created, so it doesn't try to create the same thing twice |
 | **Backend** (Terraform) | Where the state file is actually stored — here, an S3 bucket |
 | **Module** (Terraform) | A reusable folder of `.tf` files, like a function you can call with different inputs |
