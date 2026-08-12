@@ -1,0 +1,29 @@
+name: Terraform Infra (prod)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "infra/envs/prod/**"
+      - "infra/modules/**"
+      - ".github/workflows/infra-prod.yml"
+      - ".github/workflows/_terraform-apply.yml"
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "infra/envs/prod/**"
+      - "infra/modules/**"
+
+  workflow_dispatch:
+
+jobs:
+  terraform:
+    uses: ./.github/workflows/_terraform-apply.yml
+    with:
+      working_directory: infra/envs/prod
+      environment_name: prod
+      apply: ${{ github.event_name != 'pull_request' }}
+    secrets: inherit

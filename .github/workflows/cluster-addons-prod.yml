@@ -1,0 +1,34 @@
+name: Cluster Add-ons (prod)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/cluster-addons/envs/prod/**"
+      - "apps/cluster-addons/modules/**"
+      - ".github/workflows/cluster-addons-prod.yml"
+      - ".github/workflows/_terraform-apply.yml"
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/cluster-addons/envs/prod/**"
+      - "apps/cluster-addons/modules/**"
+
+  workflow_dispatch:
+
+jobs:
+  terraform:
+    uses: ./.github/workflows/_terraform-apply.yml
+    with:
+      working_directory: apps/cluster-addons/envs/prod
+      environment_name: prod
+      apply: ${{ github.event_name != 'pull_request' }}
+      # First-ever apply needs ArgoCD's Helm release to land before
+      # the Application CRD can be used — see README Section on
+      # "the two-pass apply". Harmless to pass on every run; once
+      # the release already exists, this step is a no-op.
+      extra_target: module.cluster_addons.helm_release.argocd
+    secrets: inherit

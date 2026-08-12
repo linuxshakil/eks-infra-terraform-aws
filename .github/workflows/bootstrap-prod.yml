@@ -1,0 +1,66 @@
+name: Bootstrap (prod)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+
+  bootstrap:
+    name: Bootstrap prod AWS account
+    runs-on: ubuntu-latest
+    environment: prod
+
+    defaults:
+      run:
+        working-directory: bootstrap/envs/prod
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # This is the one workflow in the whole repo that can't use
+      # OIDC — it's the thing that CREATES the OIDC role in the
+      # first place. Uses one-time-use static credentials for the
+      # prod account instead. Delete these secrets from the
+      # "prod" GitHub Environment once this has run successfully.
+      - name: Configure AWS Credentials (bootstrap run — static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_BOOTSTRAP_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_BOOTSTRAP_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format
+        run: terraform fmt -recursive -check
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+
+      - name: Summary
+        run: |
+          {
+            echo "# Bootstrap Completed — prod"
+            echo ""
+            echo '```'
+            terraform output
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY

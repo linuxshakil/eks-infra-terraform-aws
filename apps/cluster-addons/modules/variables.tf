@@ -22,3 +22,8 @@ variable "git_target_revision" {
   type    = string
   default = "main"
 }
+
+variable "gitops_path" {
+  description = "Path inside the live-poll-app repo that ArgoCD watches for this environment, e.g. gitops/overlays/dev or gitops/overlays/prod"
+  type        = string
+}

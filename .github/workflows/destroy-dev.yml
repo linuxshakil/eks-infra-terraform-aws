@@ -1,0 +1,69 @@
+name: Terraform Destroy (dev)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DESTROY to destroy the dev infrastructure'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+
+  destroy:
+    if: github.event.inputs.confirm == 'DESTROY'
+    name: Terraform Destroy (dev)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: dev
+
+    defaults:
+      run:
+        working-directory: infra/envs/dev
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      - name: Remove ArgoCD Application (if present)
+        continue-on-error: true
+        run: |
+          aws eks update-kubeconfig --name dev-eks-cluster --region ${{ secrets.AWS_REGION }}
+          kubectl delete application live-poll-app -n argocd --wait=true --ignore-not-found=true
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Destroy Plan
+        run: |
+          terraform plan -destroy -parallelism=20 -input=false -lock-timeout=10m -no-color -out=destroy.tfplan
+
+      - name: Terraform Destroy
+        run: |
+          terraform apply -parallelism=20 -input=false -auto-approve -no-color destroy.tfplan
+
+      - name: Summary
+        run: |
+          {
+            echo "# Terraform Destroy — dev"
+            echo "Infrastructure in the dev AWS account has been destroyed."
+          } >> $GITHUB_STEP_SUMMARY

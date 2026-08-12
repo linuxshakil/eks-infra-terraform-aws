@@ -1,0 +1,120 @@
+name: _terraform-apply (reusable)
+
+# Shared by every dev/prod workflow in this repo so the actual
+# Terraform steps are written once. Each caller workflow (e.g.
+# infra-dev.yml) just supplies a working directory and an
+# environment name — the environment name is what selects which
+# GitHub Environment's secrets (and any required reviewers) apply.
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        required: true
+        type: string
+      environment_name:
+        required: true
+        type: string
+      apply:
+        description: "Actually run apply (true) or stop after plan (false, e.g. for pull_request)"
+        required: false
+        type: boolean
+        default: false
+      extra_target:
+        description: "Optional -target=... for a first-pass apply (used once by cluster-addons for the ArgoCD CRD ordering issue)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+
+  terraform:
+    name: Terraform (${{ inputs.environment_name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: ${{ inputs.environment_name }}
+
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify AWS Identity
+        run: aws sts get-caller-identity
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Format
+        run: terraform fmt -recursive -check
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan (first pass, optional target)
+        if: inputs.extra_target != ''
+        run: terraform apply -auto-approve -target="${{ inputs.extra_target }}"
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -parallelism=20 \
+            -input=false \
+            -lock-timeout=10m \
+            -no-color \
+            -out=tfplan
+
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ inputs.environment_name }}
+          path: ${{ inputs.working_directory }}/tfplan
+          retention-days: 30
+
+      - name: Terraform Apply
+        if: inputs.apply
+        run: |
+          terraform apply \
+            -parallelism=20 \
+            -input=false \
+            -auto-approve \
+            -no-color \
+            tfplan
+
+      - name: Terraform Outputs
+        if: inputs.apply
+        run: terraform output -no-color
+
+      - name: Summary
+        if: inputs.apply
+        run: |
+          {
+            echo "# Terraform Apply — ${{ inputs.environment_name }}"
+            echo ""
+            echo "## Directory"
+            echo "\`${{ inputs.working_directory }}\`"
+            echo ""
+            echo "## Outputs"
+            echo '```'
+            terraform output -no-color
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY

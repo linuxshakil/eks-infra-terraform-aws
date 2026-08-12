@@ -24,8 +24,9 @@ spec:
 
           - name: backup
 
-            # Get the ECR repo URL after infra apply with
-            # "terraform output ecr_backup_repository_url" and replace it here
+            # Each account has its own "backup-images" ECR repo.
+            # Get the URL after infra apply with:
+            #   terraform output -state=infra/envs/<dev|prod>/terraform.tfstate ecr_backup_repository_url
             image: 123456789012.dkr.ecr.ap-south-1.amazonaws.com/backup-images:v1
 
             imagePullPolicy: Always

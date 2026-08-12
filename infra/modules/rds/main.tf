@@ -70,8 +70,8 @@ resource "aws_db_instance" "app" {
   engine         = "mysql"
   engine_version = "8.0"
 
-  instance_class    = "db.t3.medium"
-  allocated_storage = 20
+  instance_class    = var.instance_class
+  allocated_storage = var.allocated_storage
   storage_type      = "gp3"
 
   db_name  = var.database_name
@@ -83,17 +83,30 @@ resource "aws_db_instance" "app" {
 
   publicly_accessible = false
 
-  multi_az = false # fine for learning/demo; set true for real production (like upgrading GCP's ZONAL to REGIONAL)
+  multi_az = var.multi_az # false for dev/test; set true for prod
 
-  backup_retention_period = 7
+  backup_retention_period = var.backup_retention_period
   backup_window           = "03:00-04:00"
   maintenance_window      = "sun:04:30-sun:05:30"
 
-  skip_final_snapshot = true # convenient for learning; for production set this false and add final_snapshot_identifier
+  skip_final_snapshot = var.skip_final_snapshot # true for dev/test convenience; false for prod safety
 
-  deletion_protection = false # same as the GCP version's deletion_protection = false, kept simple for this demo
+  # Required whenever skip_final_snapshot is false (prod) — AWS
+  # needs a name for the snapshot it takes on destroy. Ignored
+  # entirely when skip_final_snapshot is true (dev/test).
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.instance_identifier}-final-${formatdate("YYYYMMDDhhmmss", timestamp())}"
+
+  deletion_protection = var.deletion_protection # false for dev/test; true for prod
 
   tags = {
     Name = var.instance_identifier
+  }
+
+  # final_snapshot_identifier embeds a timestamp so it's unique
+  # each time it would actually be used (at destroy). Without this
+  # lifecycle block, Terraform would show a spurious diff on every
+  # single plan, since timestamp() re-evaluates every run.
+  lifecycle {
+    ignore_changes = [final_snapshot_identifier]
   }
 }

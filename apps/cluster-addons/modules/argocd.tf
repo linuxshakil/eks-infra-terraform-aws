@@ -8,7 +8,8 @@
 # "platform" — it changes rarely and needs the safety of a
 # reviewed plan/apply.
 #
-# The application itself (gitops/live-poll-app) is different:
+# The application itself (a separate git repo entirely — see
+# var.git_repo_url — at some gitops/overlays/<env> path) is
 # it changes on every code push, sometimes many times a day.
 # ArgoCD is a GitOps controller that runs inside the cluster,
 # continuously watches a path in a git repo, and makes the
@@ -70,7 +71,7 @@ resource "helm_release" "argocd" {
 # just tells ArgoCD "watch this repo, this path, this branch,
 # and keep the cluster in sync with whatever you find there."
 # Everything after this point (new image tags, replica counts,
-# ingress changes) is a plain git commit to gitops/live-poll-app,
+# ingress changes) is a plain git commit to that other repo,
 # not a Terraform change.
 ############################################################
 
@@ -101,7 +102,7 @@ resource "kubernetes_manifest" "live_poll_app" {
       source = {
         repoURL        = var.git_repo_url
         targetRevision = var.git_target_revision
-        path           = "gitops/live-poll-app"
+        path           = var.gitops_path
       }
 
       destination = {
