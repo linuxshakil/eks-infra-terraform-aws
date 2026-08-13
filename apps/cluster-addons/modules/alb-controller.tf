@@ -1,11 +1,12 @@
 ############################################################
 # AWS Load Balancer Controller
 #
-# This Helm chart watches the Kubernetes "Ingress" objects used
-# used in the live-poll-app-deploy repo and automatically provisions an Application
-# Load Balancer (ALB) — it does the same job as GKE's built-in
-# GCE Ingress controller, except on EKS you have to install it
-# yourself.
+# This Helm chart watches Kubernetes "Ingress" objects (created
+# in the live-poll-app-deploy repo) and automatically provisions
+# an Application Load Balancer (ALB) to route external traffic
+# to them. EKS has no built-in ingress controller, so this has
+# to be installed explicitly before any Ingress object will
+# actually get a real load balancer behind it.
 ############################################################
 
 resource "kubernetes_service_account" "alb_controller" {

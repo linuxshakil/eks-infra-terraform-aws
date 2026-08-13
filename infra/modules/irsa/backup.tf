@@ -1,10 +1,9 @@
 ############################################################
 # IRSA — Backup CronJob
 #
-# On GCP, "cloudsql-backup-sa" had roles/cloudsql.admin +
-# storage.objectAdmin so it could run a Cloud SQL export and
-# write to a GCS bucket. AWS equivalent: RDS snapshot/export
-# permissions + S3 bucket read/write.
+# This role gives the backup job permission to create RDS
+# snapshots, read/write the backup S3 bucket, and read the DB
+# password from Secrets Manager (needed to run mysqldump).
 ############################################################
 
 data "aws_iam_policy_document" "backup_trust" {

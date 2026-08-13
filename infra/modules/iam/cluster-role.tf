@@ -1,10 +1,9 @@
 ############################################################
 # EKS Cluster Role
 #
-# On GKE, Google manages the control plane role for you — no
-# IAM resource is needed. On EKS, the control plane itself
-# also has to assume an IAM Role so it can manage ENIs,
-# security groups, and load balancers on your behalf.
+# The EKS control plane itself has to assume an IAM Role so it
+# can manage ENIs, security groups, and load balancers on your
+# behalf.
 ############################################################
 
 data "aws_iam_policy_document" "eks_cluster_trust" {

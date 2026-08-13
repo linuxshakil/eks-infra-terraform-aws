@@ -1,11 +1,10 @@
 ############################################################
 # GitHub Actions OIDC Provider
 #
-# In GCP we built "Workload Identity Federation" (WIF) so
-# GitHub Actions could access GCP resources without any
-# long-lived JSON key. On AWS the same idea is called an
-# "IAM OIDC Identity Provider" — the concept is exactly the
-# same:
+# This registers GitHub's OIDC issuer as a trusted identity
+# provider in IAM, so that a GitHub Actions workflow can prove
+# its identity and receive temporary AWS credentials — without
+# any long-lived access key ever being stored as a GitHub secret:
 #
 #   GitHub Actions -> OIDC token -> AWS STS AssumeRoleWithWebIdentity
 #   -> temporary AWS credentials (no static key, ever)
@@ -30,9 +29,10 @@ resource "aws_iam_openid_connect_provider" "github" {
 ############################################################
 # GitHub Actions IAM Role (assumed via OIDC)
 #
-# The trust policy only allows our own repo — similar to how
-# GCP used "attribute_condition = assertion.repository == ..."
-# to restrict which repo could use the identity.
+# The trust policy's condition restricts this role to only be
+# assumable by tokens issued for our own repository — so no
+# other GitHub repo, even one using the same OIDC provider,
+# could assume this role.
 ############################################################
 
 data "aws_iam_policy_document" "github_actions_trust" {

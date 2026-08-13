@@ -1,17 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# The GCP version used "gcloud sql export sql", which exported
-# straight from Cloud SQL into a GCS bucket (a managed export).
-# RDS MySQL has no such native "export straight to S3" feature
-# (Aurora does, plain RDS MySQL doesn't) — so we use the classic,
-# most portable approach instead: dump the DB with mysqldump,
-# then upload it with "aws s3 cp". Same concept, just a slightly
-# more manual/explicit mechanism.
+# Plain RDS MySQL has no built-in "export straight to S3" feature
+# (Aurora MySQL does, but plain RDS MySQL doesn't) — so this uses
+# the classic, most portable approach instead: dump the database
+# with mysqldump, then upload the dump file with "aws s3 cp".
 #
-# Note: live-poll-app has no PVC/uploads folder (all of its state
-# lives in RDS, so this
-# script only needs to back up the database — nothing else.
+# Note: live-poll-app has no PVC/uploads folder — all of its state
+# lives in RDS, so this script only needs to back up the database,
+# nothing else.
 
 DATE=$(date +%F)
 BUCKET="s3://${BACKUP_BUCKET}"

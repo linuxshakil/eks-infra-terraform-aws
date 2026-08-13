@@ -1,14 +1,11 @@
 ############################################################
 # EKS Cluster
 #
-# GCP's "google_container_cluster" is "aws_eks_cluster" here.
-# The difference: GKE offers a fully-managed control plane and
-# a node pool together in one resource block. On EKS, the
-# control plane (aws_eks_cluster) and worker nodes
-# (aws_eks_node_group) are always two separate resources — a
-# bit more explicit, but the concept is the same: "control
-# plane is managed by the cloud, the data plane (nodes) runs
-# inside your own account".
+# The control plane (aws_eks_cluster) and the worker nodes
+# (aws_eks_node_group, below) are always two separate resources
+# on EKS: AWS manages and runs the control plane for you; the
+# worker nodes are ordinary EC2 instances that run inside your
+# own account and register themselves with that control plane.
 ############################################################
 
 resource "aws_eks_cluster" "primary" {
@@ -19,18 +16,17 @@ resource "aws_eks_cluster" "primary" {
   vpc_config {
     subnet_ids = concat(var.private_subnet_ids, var.public_subnet_ids)
 
-    # Similar to GCP's "private_cluster_config" — the control
-    # plane endpoint is both public (so CI/CD and kubectl can
-    # connect) and private (so nodes inside the VPC can talk to
-    # it directly). For production, restrict public access to
-    # specific CIDRs (this does the same job as GKE's
-    # master_authorized_networks, via public_access_cidrs).
+    # The control plane endpoint is both public (so CI/CD and
+    # kubectl can connect from outside the VPC) and private (so
+    # nodes inside the VPC can talk to it directly, without
+    # routing out to the internet and back). For production,
+    # restrict public access to specific CIDRs via
+    # public_access_cidrs instead of leaving it fully open.
     endpoint_private_access = true
     endpoint_public_access  = true
   }
 
-  # AWS equivalent of GKE's "logging_config" / "monitoring_config"
-  # — all of this goes into CloudWatch Logs.
+  # Cluster control-plane logs — sent to CloudWatch Logs.
   enabled_cluster_log_types = [
     "api",
     "audit",
@@ -47,13 +43,12 @@ resource "aws_eks_cluster" "primary" {
 ############################################################
 # OIDC Provider for IRSA (IAM Roles for Service Accounts)
 #
-# This is the AWS equivalent of GCP's "Workload Identity".
-# Every EKS cluster exposes its own OIDC issuer; we register
-# that issuer as a "trusted identity provider" in IAM. After
-# that, any Kubernetes ServiceAccount, with the right
-# annotation, can "assume" an IAM Role — just like GCP
-# Workload Identity's "serviceAccount:PROJECT.svc.id.goog[ns/sa]"
-# pattern.
+# Every EKS cluster exposes its own OIDC issuer URL, generated
+# the moment the cluster is created. Registering that issuer as
+# a trusted identity provider in IAM is what makes IRSA possible:
+# any Kubernetes ServiceAccount, annotated with an IAM role ARN,
+# can then "assume" that role and receive temporary AWS
+# credentials — no password or access key involved anywhere.
 ############################################################
 
 data "tls_certificate" "eks" {
@@ -103,10 +98,10 @@ resource "aws_eks_node_group" "primary" {
     Name = "${var.cluster_name}-node"
   }
 
-  # GKE had "management { auto_upgrade = true, auto_repair = true }"
-  # — EKS managed node groups have this behaviour built in: AWS
-  # replaces unhealthy nodes on its own, and "update_config"
-  # controls rolling upgrades.
+  # Managed node groups handle unhealthy-node replacement and
+  # rolling upgrades automatically (governed by update_config
+  # above) — no separate auto-repair/auto-upgrade configuration
+  # is needed.
 
   depends_on = [
     aws_eks_cluster.primary
@@ -114,14 +109,12 @@ resource "aws_eks_node_group" "primary" {
 }
 
 ############################################################
-# EKS Add-ons (equivalent of GKE's "addons_config" block)
+# EKS Add-ons
 #
-# GKE had horizontal_pod_autoscaling and http_load_balancing as
-# built-in addons. EKS also manages some things as "add-ons" —
-# here we enable coredns, kube-proxy, vpc-cni, and
-# aws-ebs-csi-driver (kept enabled as a baseline capability, even
-# though live-poll-app itself has no PVC — see the note in
-# modules/irsa/ebs-csi.tf).
+# coredns, kube-proxy, and vpc-cni are the baseline add-ons
+# every cluster needs. aws-ebs-csi-driver is kept enabled too,
+# as a general-purpose capability, even though live-poll-app
+# itself has no PVC — see the note in modules/irsa/ebs-csi.tf.
 ############################################################
 
 resource "aws_eks_addon" "vpc_cni" {
@@ -147,7 +140,7 @@ resource "aws_eks_addon" "kube_proxy" {
 # OIDC provider, which has only just been created above. So
 # that addon is not defined in this module — it lives in
 # "modules/irsa" instead (which runs right after this module).
-# This avoids a dependency cycle. README Section 13 explains
-# this sequencing in detail, since it's the biggest structural
-# difference from GKE.
+# This avoids a dependency cycle: the IRSA role needs the OIDC
+# provider to exist first, and the addon needs the IRSA role to
+# exist first, so they can't both be created in this same module.
 ############################################################

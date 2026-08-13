@@ -1,4 +1,4 @@
-# eks-infra-terraform
+# eks-infra-terraform-aws
 
 **Start here.** This is the first of three repos you'll set up. This README is written so that someone who has never used AWS, Terraform, Kubernetes, or ArgoCD before can read it top to bottom, understand *why* each piece exists, and actually get a working system running by the end.
 
@@ -112,7 +112,7 @@ Read this part even if some of it feels obvious — later steps refer back to th
 This project is split across **three separate GitHub repos**, on purpose (the reasoning is explained in full in each repo's own README — this section is just the map).
 
 ```
-1. eks-infra-terraform   (THIS repo — you're reading it now)
+1. eks-infra-terraform-aws   (THIS repo — you're reading it now)
    → Terraform only. Creates the AWS infrastructure: network, Kubernetes
      cluster, database, permissions, and installs ArgoCD itself.
    → You run this with the `terraform` command, or GitHub Actions runs
@@ -251,23 +251,23 @@ Each should print a different 12-digit `Account` number. **Notice what you did *
 
 ## Part 5 — Set Up GitHub (Repos, Environments, Secrets)
 
-### Create the three repos
+### The three repos
 
-On GitHub, create three **empty** repositories (no README, no `.gitignore` — you'll push these from the zip files you already have):
+These three repos already exist on GitHub — you're pushing your local code into them, not creating new empty ones:
 
-1. `eks-infra-terraform`
-2. `live-poll-app`
-3. `live-poll-app-deploy`
+1. [`eks-infra-terraform-aws`](https://github.com/linuxshakil/eks-infra-terraform-aws)
+2. [`live-poll-app`](https://github.com/linuxshakil/live-poll-app)
+3. [`live-poll-app-deploy`](https://github.com/linuxshakil/live-poll-app-deploy)
 
 Push each folder into its matching repo:
 
 ```bash
-# from inside the eks-infra-terraform folder
+# from inside the eks-infra-terraform-aws folder
 git init
 git add .
 git commit -m "initial commit"
 git branch -M main
-git remote add origin https://github.com/<your-username>/eks-infra-terraform.git
+git remote add origin https://github.com/linuxshakil/eks-infra-terraform-aws.git
 git push -u origin main
 ```
 
@@ -275,11 +275,11 @@ Repeat the same four commands (`git init` through `git push`) inside the `live-p
 
 ### Create GitHub Environments
 
-**In the `eks-infra-terraform` repo**, go to **Settings → Environments** and create two environments: `dev` and `prod`. Do the exact same thing in `live-poll-app` (you'll only need a `dev` environment there) and in `live-poll-app-deploy` (no environments needed there yet — its secrets are repository-level, explained in that repo's README).
+**In the `eks-infra-terraform-aws` repo**, go to **Settings → Environments** and create two environments: `dev` and `prod`. Do the exact same thing in `live-poll-app` (you'll only need a `dev` environment there) and in `live-poll-app-deploy` (no environments needed there yet — its secrets are repository-level, explained in that repo's README).
 
-For the `prod` environment in `eks-infra-terraform` (and later, in `live-poll-app-deploy`), click **Required reviewers** and add yourself (or a teammate) — this means any workflow that touches prod will pause and wait for a manual click to approve, which is your safety net against an accidental production change.
+For the `prod` environment in `eks-infra-terraform-aws` (and later, in `live-poll-app-deploy`), click **Required reviewers** and add yourself (or a teammate) — this means any workflow that touches prod will pause and wait for a manual click to approve, which is your safety net against an accidental production change.
 
-### Add secrets to `eks-infra-terraform`
+### Add secrets to `eks-infra-terraform-aws`
 
 Under the `dev` environment, add this secret (**Settings → Environments → dev → Add secret**):
 
@@ -297,11 +297,23 @@ You'll add one more secret to each environment (`AWS_ROLE_ARN`) after Part 6 —
 
 ## Part 6 — Deploy the Dev Environment, Step by Step
 
-Everything from here runs on your own computer first (so you can see exactly what's happening), using the `dev-account` AWS profile you set up in Part 4. Later, GitHub Actions will do these same steps automatically.
+> **Only Step 6.1 (Bootstrap) has to run from your own laptop.** Every other Terraform project in this repo — `infra` and `apps/cluster-addons` — can be applied entirely through GitHub Actions once bootstrap has run once. Read the box below before you start so you know which path you're taking.
+
+> **Option A — walk through everything on your laptop first (recommended for your very first run).**
+> Run every `terraform init` / `terraform plan` / `terraform apply` shown below yourself, in order, watching the output. This is the best way to actually understand what's happening the first time, and it's what the rest of this guide assumes you're doing.
+>
+> **Option B — let GitHub Actions do it, once bootstrap is done.**
+> After Step 6.1, everything else in this guide can instead be done by: filling in the right values in a `.tf` or `.tfvars` file, committing, and pushing to `main`. `infra-dev.yml` and `cluster-addons-dev.yml` (in `.github/workflows/`) run the exact same `terraform init` / `plan` / `apply` sequence automatically, using the OIDC role bootstrap created — no local `terraform` command needed at all. `cluster-addons-dev.yml` even handles the two-pass ArgoCD apply (Step 7.1) automatically, via its `extra_target` input — you don't need to think about that part manually if you're on Option B. Opening a **pull request** instead of pushing straight to `main` gets you a `terraform plan` posted as a workflow run, without anything being applied — a good way to review a change before it goes live.
+>
+> Both options end up in the exact same place — the state is stored remotely in S3 either way, so you can even mix the two (bootstrap locally, then switch to Option B for everything after). This guide's steps below are written for **Option A**; wherever a step says "run `terraform apply`," Option B's equivalent is "commit this change and push to `main`," using the matching workflow from the table in Part 2.
+
+Using the `dev-account` AWS profile you set up in Part 4:
 
 ### Step 6.1 — Bootstrap
 
 > **📍 This is the step that creates the S3 state bucket.** If you were looking for "where does the Terraform state backend bucket get created" — it's right here, in `bootstrap/envs/dev`'s `terraform apply`, via the `aws_s3_bucket` resource inside `bootstrap/modules/core/main.tf`. Nothing before this step creates any AWS resource at all. `bootstrap` exists specifically to create two things: (1) this S3 bucket, which `infra` and `apps/cluster-addons` will store their own state in, and (2) the OIDC identity that lets GitHub Actions authenticate without a stored key. Both are prerequisites every other Terraform project in this repo depends on.
+>
+> **This step is always Option A — it always runs from your laptop, never from GitHub Actions.** See the explanation in Step 6.1's closing note below for why.
 
 First, make sure your SSO session is active (sessions expire after a few hours — if a command below fails with a credentials/expiry error, just re-run this):
 
@@ -313,7 +325,7 @@ aws sso login --profile dev-account
 cd bootstrap/envs/dev
 ```
 
-Open `terraform.tfvars` in this folder and check the values — especially `state_bucket_name` (must be a **globally unique** name across all of AWS, not just your account — add your name or a random number if `eks-dev-001-tf-state` is already taken) and `github_repository` (set this to `<your-username>/eks-infra-terraform`).
+Open `terraform.tfvars` in this folder and check the values — especially `state_bucket_name` (must be a **globally unique** name across all of AWS, not just your account — add your name or a random number if `eks-dev-001-tf-state` is already taken) and `github_repository` (set this to `linuxshakil/eks-infra-terraform-aws`).
 
 ```bash
 terraform init
@@ -357,6 +369,8 @@ git push
 ```
 
 ### Step 6.3 — Create the actual infrastructure (network, Kubernetes cluster, database)
+
+> **Option B for this step**: instead of running the commands below, you can commit `infra/envs/dev/terraform.tfvars` and push to `main` — `infra-dev.yml` runs this exact `init` → `plan` → `apply` sequence in GitHub Actions using the OIDC role from Step 6.1. Continuing with Option A here.
 
 ```bash
 cd infra/envs/dev
@@ -403,13 +417,15 @@ You should see 1 node listed with status `Ready`. If you see this, your Kubernet
 
 ### Step 7.1 — Install the cluster add-ons (Load Balancer Controller, External Secrets, ArgoCD)
 
+> **Option B for this step**: after filling in `terraform.tfvars` below, commit and push to `main` instead of running the commands by hand — `cluster-addons-dev.yml` runs the exact same two-pass sequence automatically (its `extra_target` input handles the ArgoCD CRD ordering issue from Step 6, described just below, for you). Continuing with Option A here.
+
 ```bash
 cd ../../apps/cluster-addons/envs/dev
 ```
 
 Open `terraform.tfvars` and fill in:
 - `vpc_id` — from Step 6.3's output
-- `git_repo_url` — set to `https://github.com/<your-username>/live-poll-app-deploy.git`
+- `git_repo_url` — set to `https://github.com/linuxshakil/live-poll-app-deploy.git`
 
 ```bash
 terraform init
@@ -496,7 +512,7 @@ This is the payoff step — you'll see the entire pipeline work end to end.
 
 ### Step 9.1 — One-time GitHub setup for `live-poll-app`
 
-Follow **`live-poll-app`'s own README** for a few one-time steps you need there: adding its `dev` environment's `AWS_ROLE_ARN` secret (same value as this repo's dev environment), and creating a scoped Personal Access Token so it can commit to `live-poll-app-deploy`. Come back here once that's done.
+Follow **`live-poll-app`'s own README** for a few one-time steps you need there: adding its `dev` environment's `AWS_ROLE_ARN` secret (same value as this repo's dev environment), and setting up a GitHub App so it can commit to `live-poll-app-deploy`. Come back here once that's done.
 
 ### Step 9.2 — Trigger the first build
 
@@ -571,7 +587,7 @@ Once prod's cluster add-ons are applied and `overlays/prod/` is filled in, re-ru
 ## Part 12 — Repository Structure Reference
 
 ```
-eks-infra-terraform/
+eks-infra-terraform-aws/
 ├── bootstrap/
 │   ├── modules/core/                # shared logic: S3 state bucket + GitHub OIDC provider + role
 │   └── envs/dev/  envs/prod/        # run once each, by hand, using your Okta-backed SSO session
@@ -666,7 +682,7 @@ Or trigger `destroy-dev.yml` (or `destroy-prod.yml`) from the Actions tab, type 
 | ArgoCD shows the app as `OutOfSync` and it never changes | A placeholder value (like `REPLACE_IN_OVERLAY` or `REPLACE_WITH_DEV_RDS_ENDPOINT`) is still sitting in one of the overlay files | Go back to Step 7.2 and check every file for leftover placeholders |
 | ArgoCD shows `Missing` for the app's Deployment | No image has been pushed to ECR yet | Complete Part 9 |
 | Pod is stuck in `CrashLoopBackOff` | Usually a database connection problem | `kubectl logs -n app deploy/live-poll-app` and check the `DB_HOST` value matches your real RDS endpoint |
-| `git push` from a GitHub Actions workflow fails with a permission error | The scoped Personal Access Token for cross-repo commits (in `live-poll-app`) is missing, expired, or has the wrong permission | See `live-poll-app`'s README, "Cross-Repo Write Access" section |
+| `git push` from a GitHub Actions workflow fails with a permission error | The GitHub App for cross-repo commits (in `live-poll-app`) isn't installed on `live-poll-app-deploy`, or its App ID / private key secret is missing | See `live-poll-app`'s README, "Cross-Repo Write Access" section |
 | Both AWS profiles show the same Account ID | You ran `aws configure sso --profile prod-account` but picked the dev account during the browser login step by mistake | Re-run `aws configure sso --profile prod-account` from Part 4.5 and make sure you select the *prod* account when the browser prompts you |
 | A `terraform` command fails with a credentials/token expired error | Your SSO session timed out (they last a few hours) | `aws sso login --profile dev-account` (or `prod-account`), then re-run the same `terraform` command |
 
@@ -700,5 +716,5 @@ Or trigger `destroy-dev.yml` (or `destroy-prod.yml`) from the Actions tab, type 
 
 ## Companion Repos
 
-- [`live-poll-app`](https://github.com/yourusername/live-poll-app) — application source code and its dev build/push pipeline; no Terraform, no deployment manifests
-- [`live-poll-app-deploy`](https://github.com/yourusername/live-poll-app-deploy) — GitOps manifests (Kustomize base + dev/prod overlays) that ArgoCD actually watches, plus the prod promotion workflow — see that repo's README for the full trace of how a database secret moves from this repo's Terraform all the way to a running pod without ever passing through any of the three repos' CI
+- [`live-poll-app`](https://github.com/linuxshakil/live-poll-app) — application source code and its dev build/push pipeline; no Terraform, no deployment manifests
+- [`live-poll-app-deploy`](https://github.com/linuxshakil/live-poll-app-deploy) — GitOps manifests (Kustomize base + dev/prod overlays) that ArgoCD actually watches, plus the prod promotion workflow — see that repo's README for the full trace of how a database secret moves from this repo's Terraform all the way to a running pod without ever passing through any of the three repos' CI

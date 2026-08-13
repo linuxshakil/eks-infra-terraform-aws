@@ -1,11 +1,9 @@
 ############################################################
-# EKS Node Role  (equivalent of GCP's "node_sa")
+# EKS Node Role
 #
-# On GKE, the node pool used a dedicated Google Service Account
-# (node_sa) with roles/logging.logWriter, monitoring.metricWriter,
-# artifactregistry.reader, and so on. On AWS, worker node EC2
-# instances also use an IAM Role (attached via an Instance
-# Profile) with equivalent managed policies.
+# Worker node EC2 instances need their own IAM Role (attached
+# via an Instance Profile) so they can join the cluster, report
+# health, pull container images, and manage network interfaces.
 ############################################################
 
 data "aws_iam_policy_document" "eks_node_trust" {

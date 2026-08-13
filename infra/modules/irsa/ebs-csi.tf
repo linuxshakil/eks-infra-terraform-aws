@@ -1,10 +1,9 @@
 ############################################################
 # IRSA — EBS CSI Driver
 #
-# Permission to actually create/attach/delete an EBS volume for
-# a PVC (PersistentVolumeClaim). On GKE, the Persistent Disk CSI
-# driver was built in and worked using node_sa's permissions;
-# on EKS it needs its own dedicated IRSA role.
+# Permission to create, attach, and delete EBS volumes for a
+# PVC (PersistentVolumeClaim). The EBS CSI driver needs its own
+# dedicated IRSA role to perform these actions on your behalf.
 #
 # NOTE: live-poll-app itself doesn't need a PVC — its only
 # storage is RDS, outside the cluster. This addon is kept

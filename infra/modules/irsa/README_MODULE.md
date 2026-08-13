@@ -1,14 +1,13 @@
 # irsa module
 
-This module is the AWS translation of GKE's "Workload Identity" concept —
-IRSA (IAM Roles for Service Accounts).
+This module creates IRSA (IAM Roles for Service Accounts) — the mechanism
+that lets a specific Kubernetes ServiceAccount assume a specific, narrowly
+scoped IAM Role, with no static AWS credential involved anywhere.
 
-The GCP pattern was:
-    google_service_account_iam_member { member = "serviceAccount:PROJECT.svc.id.goog[namespace/ksa-name]" }
+The trust policy pattern used throughout this module:
 
-The AWS pattern is:
-    trust policy condition: "oidc-provider:sub" == "system:serviceaccount:namespace:ksa-name"
+    condition: "oidc-provider:sub" == "system:serviceaccount:<namespace>:<sa-name>"
 
-For each role, we build a helper trust-policy data source that matches a
-specific namespace + ServiceAccount name — no other pod can assume that
-role, exactly the same namespace/SA-scoping that GKE Workload Identity uses.
+For each role, a dedicated trust-policy data source matches one specific
+namespace + ServiceAccount name — no other pod in the cluster can assume
+that role.

@@ -1,10 +1,10 @@
 ############################################################
 # AWS Secrets Manager
 #
-# GCP: google_secret_manager_secret + secret_version, "auto"
-# replication.
-# AWS: aws_secretsmanager_secret + secret_version — the concept
-# and API shape are almost identical.
+# Stores the RDS password securely. Applications never read this
+# value directly from Terraform — they read it at runtime via
+# IRSA + the External Secrets Operator (see infra/modules/irsa
+# and the live-poll-app-deploy repo's secretstore.yaml).
 ############################################################
 
 resource "aws_secretsmanager_secret" "app_db_password" {

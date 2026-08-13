@@ -1,10 +1,11 @@
 ############################################################
 # External Secrets Operator
 #
-# Same chart and pattern as the GCP version — only the
-# provider name changes: instead of the GCP Secret Manager
-# provider, this Operator's "aws" (Secrets Manager) provider
-# will be used by the SecretStore manifests in the live-poll-app-deploy repo.
+# Syncs secrets from AWS Secrets Manager into native Kubernetes
+# Secret objects. This Operator's "aws" provider is what the
+# SecretStore manifests in the live-poll-app-deploy repo
+# authenticate against, using each ServiceAccount's own IRSA
+# identity.
 ############################################################
 
 resource "kubernetes_namespace" "external_secrets" {

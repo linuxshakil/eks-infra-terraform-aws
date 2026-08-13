@@ -1,11 +1,9 @@
 ############################################################
 # IRSA — Application (live-poll-app)
 #
-# On GCP, "wordpress-gsa" read the DB password from Secret
-# Manager. Here, this role reads app-db-password from Secrets
-# Manager the same way — namespace "app", ServiceAccount
-# "app-sa" (same kind of scoping as GCP's
-# ${project}.svc.id.goog[app/app-sa]).
+# This role reads app-db-password from Secrets Manager, scoped
+# to a specific ServiceAccount: namespace "app", ServiceAccount
+# "app-sa". No other pod anywhere in the cluster can assume it.
 #
 # This role is created by Terraform, but nothing in
 # live-poll-app-deploy ever needs to know its ARN value in

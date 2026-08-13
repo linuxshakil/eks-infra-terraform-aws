@@ -1,12 +1,12 @@
 ############################################################
 # Terraform State Bucket (S3)
 #
-# In GCP, we used a GCS bucket to store state. On AWS, an S3
-# bucket is the equivalent. State locking used to need a
-# separate DynamoDB table, but from Terraform 1.10 onwards,
-# S3 can do locking on its own using conditional writes
-# (S3 Native State Locking). So we don't need DynamoDB here
-# at all now.
+# This S3 bucket stores the Terraform state for the infra/ and
+# apps/cluster-addons/ projects in this same AWS account. State
+# locking used to need a separate DynamoDB table, but from
+# Terraform 1.10 onwards, S3 can do locking on its own using
+# conditional writes (S3 Native State Locking) — so no DynamoDB
+# table is needed here at all.
 ############################################################
 
 resource "aws_s3_bucket" "tf_state" {

@@ -3,7 +3,7 @@ output "instance_identifier" {
 }
 
 output "endpoint" {
-  description = "Equivalent of GCP's 'private_ip' — the app connects using this host"
+  description = "The hostname the application connects to — the app's DB_HOST value"
   value       = aws_db_instance.app.address
 }
 

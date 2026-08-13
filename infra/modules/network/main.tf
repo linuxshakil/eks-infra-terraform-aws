@@ -1,17 +1,13 @@
 ############################################################
 # VPC
 #
-# In GCP we used "google_compute_network" (auto_create_subnetworks
-# = false) and created subnets and secondary ranges ourselves.
-# On AWS, the CIDR must be fixed when you create the VPC, and
-# subnets are always a separate resource (same as GCP).
+# The CIDR block is fixed at creation time, and subnets are
+# always created as separate resources.
 #
-# There is no direct AWS equivalent of secondary ranges (pods-range
-# / services-range) because EKS's default networking mode is
-# "VPC-CNI" — pods get real IPs straight from the VPC subnet
-# (similar to GKE's "VPC-Native" mode, but without a separate
-# secondary range). That's why we've made the subnets generously
-# sized.
+# EKS's default networking mode is "VPC-CNI" — pods get real IP
+# addresses straight out of the subnet's own CIDR range, rather
+# than from a separate secondary range. That's why the subnets
+# below are sized generously.
 ############################################################
 
 resource "aws_vpc" "main" {
@@ -46,9 +42,9 @@ resource "aws_subnet" "public" {
   tags = {
     Name = "${var.cluster_name}-public-${count.index}"
     # These tags tell the AWS Load Balancer Controller and EKS
-    # which subnets can be used for public ALBs. GCP didn't need
-    # this kind of explicit tagging because the GCE Ingress
-    # controller is wired directly into Google's own control plane.
+    # which subnets can be used for public ALBs — the Load
+    # Balancer Controller discovers eligible subnets by tag
+    # rather than through any explicit configuration.
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
     "kubernetes.io/role/elb"                    = "1"
   }
@@ -73,7 +69,7 @@ resource "aws_subnet" "private" {
 }
 
 ############################################################
-# Internet Gateway  (implicit on GCP; an explicit resource on AWS)
+# Internet Gateway
 ############################################################
 
 resource "aws_internet_gateway" "main" {
@@ -87,10 +83,9 @@ resource "aws_internet_gateway" "main" {
 ############################################################
 # NAT Gateway
 #
-# GCP's "google_compute_router_nat" (Cloud NAT) is the equivalent
-# of AWS's "aws_nat_gateway" here. Worker nodes in the private
-# subnet reach the internet (docker pulls, package updates,
-# outbound ECR calls) through this, without needing a public IP.
+# Worker nodes in the private subnets reach the internet
+# (docker pulls, package updates, outbound ECR calls) through
+# this, without needing a public IP address of their own.
 ############################################################
 
 resource "aws_eip" "nat" {

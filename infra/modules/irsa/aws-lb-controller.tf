@@ -1,12 +1,12 @@
 ############################################################
 # IRSA — AWS Load Balancer Controller
 #
-# On GKE, the "gce" Ingress class was built in — no extra
-# controller had to be installed. On EKS, creating an ALB
-# Ingress needs a Helm-installed controller called "AWS Load
-# Balancer Controller" (installed in apps/cluster-addons). Its
-# ServiceAccount assumes this role via IRSA so it can
-# create/manage ALBs, Target Groups, and Security Groups.
+# EKS has no built-in ingress controller — creating an ALB from
+# a Kubernetes Ingress object needs a Helm-installed controller
+# called "AWS Load Balancer Controller" (installed in
+# apps/cluster-addons). Its ServiceAccount assumes this role via
+# IRSA so it can create and manage ALBs, Target Groups, and
+# Security Groups on your behalf.
 ############################################################
 
 data "aws_iam_policy_document" "alb_controller_trust" {

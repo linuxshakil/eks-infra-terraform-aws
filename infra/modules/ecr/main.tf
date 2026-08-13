@@ -1,5 +1,5 @@
 ############################################################
-# ECR Repository  (GCP ke Artifact Registry ka equivalent)
+# ECR Repository — a private Docker image registry
 ############################################################
 
 resource "aws_ecr_repository" "backup" {

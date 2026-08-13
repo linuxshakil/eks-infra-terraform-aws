@@ -1,13 +1,9 @@
 ############################################################
 # DB Subnet Group
 #
-# On GCP, Cloud SQL's "private_network" peered directly into
-# the VPC (private services access). The AWS RDS model is a
-# bit simpler — RDS's ENI is created straight inside the
-# subnets you give it, no separate peering connection needed.
-# That's why our "network" module has no peering.tf like the
-# GCP version did — this RDS module just takes subnet_ids and
-# places its ENI inside the private subnets on its own.
+# RDS creates its own network interface (ENI) directly inside
+# whichever subnets you give it here — no VPC peering or
+# separate network connection step is required.
 ############################################################
 
 resource "aws_db_subnet_group" "app" {
@@ -22,11 +18,9 @@ resource "aws_db_subnet_group" "app" {
 ############################################################
 # Security Group
 #
-# On GCP, Cloud SQL's private IP was already VPC-internal, so
-# no firewall rule was needed in that demo. On AWS, RDS always
-# sits behind a Security Group — we allow only port 3306
-# (MySQL) from the EKS node security group, nothing else. This
-# is actually more explicit and secure than the GCP version.
+# RDS always sits behind a Security Group — this one allows
+# only port 3306 (MySQL) from the EKS node security group,
+# nothing else. The database has no public access at all.
 ############################################################
 
 resource "aws_security_group" "rds" {
@@ -57,12 +51,10 @@ resource "aws_security_group" "rds" {
 ############################################################
 # RDS MySQL Instance
 #
-# GCP: google_sql_database_instance (MYSQL_8_0, tier db-custom-1-3840,
-# ZONAL availability, PD_SSD 20GB, automated backups on).
-#
-# AWS equivalent: db.t3.medium instance class, engine mysql
-# 8.0, gp3 storage, Multi-AZ off (learning tier — turn on for
-# real production), automated backups enabled by default.
+# gp3 storage, MySQL 8.0, sizing and Multi-AZ controlled by
+# variables so dev and prod environments can pass in different
+# values (see infra/envs/dev and infra/envs/prod's module
+# "rds" blocks). Automated backups are enabled by default.
 ############################################################
 
 resource "aws_db_instance" "app" {

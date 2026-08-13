@@ -1,9 +1,9 @@
 ############################################################
-# Backup Bucket  (GCS bucket -> S3 bucket)
+# Backup Bucket
 #
-# GCP: google_storage_bucket, uniform_bucket_level_access,
-# public_access_prevention enforced, versioning, 30-day
-# lifecycle delete rule.
+# A private, versioned S3 bucket for RDS database dumps. Public
+# access is fully blocked, and a 30-day lifecycle rule expires
+# old backups automatically.
 ############################################################
 
 resource "aws_s3_bucket" "backup" {

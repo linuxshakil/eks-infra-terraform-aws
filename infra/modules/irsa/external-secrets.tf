@@ -1,11 +1,10 @@
 ############################################################
 # IRSA — External Secrets Operator
 #
-# Same as on GKE, this role needs generic permission to read
-# all of Secrets Manager (or at least this project's secrets
-# prefix), because External Secrets Operator is a central
-# cluster-wide component that serves ExternalSecret objects
-# across different namespaces.
+# This role needs generic permission to read Secrets Manager,
+# because External Secrets Operator is a central, cluster-wide
+# component that serves ExternalSecret objects across different
+# namespaces — it isn't scoped to just one application.
 ############################################################
 
 data "aws_iam_policy_document" "external_secrets_trust" {
