@@ -179,17 +179,21 @@ There are two completely different kinds of "who can do what" in this project, a
 
 This part covers the human side.
 
+> **Before you start — where do "two accounts" actually come from?** You will set up **exactly one** Okta app integration and **exactly one** AWS Identity Center instance — not two of either. IAM Identity Center is inherently a multi-account system: it's enabled once, in your Organization's management account, and from that single place it can grant access into *every* account in the Organization. The "two accounts" part happens later, in Step 4.4, where you create two separate **account assignments** (one pointing at dev, one pointing at prod) from that one instance — not two separate setups. Keep this in mind as you go through Steps 4.2-4.4 below; if you ever find yourself about to add the Okta app a second time or enable Identity Center a second time, stop — that's not needed.
+
 ### Step 4.1 — Create the AWS Organization and the two accounts
 
 1. Go to [aws.amazon.com](https://aws.amazon.com) and create your first account. Any account you create first automatically becomes an **AWS Organizations management account** the moment you enable Organizations on it.
 2. In the AWS Console, go to **AWS Organizations** → **Add an AWS account** → create your second account (this reuses your first account's billing — no second credit card needed). Name the two accounts clearly, e.g. `myproject-dev` and `myproject-prod`.
 3. Note down each account's **12-digit Account ID** (top-right of the console, under your username) — you'll need these throughout this guide as **the dev account** and **the prod account**.
 
-> **Why does this matter for Identity Center?** IAM Identity Center is enabled once, on the *management* account, and from there it can grant access into *every* account in the Organization — including both dev and prod — through a single Okta login. This is the whole point: one login, two accounts, clean separation of who can do what in each.
+With both accounts created and inside the same Organization, Identity Center (set up next) will be able to reach into both of them from one place — that's the "one setup, two accounts" point made above.
 
 ### Step 4.2 — Add the AWS Identity Center app in Okta
 
 You said you already have a free Okta account — good, this reuses it entirely, no new signup needed.
+
+> **Do this step once, total — not once per account.** This single app integration will end up granting access into both your dev and prod AWS accounts; the split between the two happens later in Step 4.4, inside AWS, not here in Okta.
 
 1. In the **Okta Admin Console**, go to **Applications → Browse App Catalog**, search for **"AWS IAM Identity Center"**, and click **Add Integration**.
 2. Follow Okta's setup wizard — it will show you a **metadata URL** or downloadable **XML metadata file**. Keep this tab open; you'll need it in the next step.
@@ -197,23 +201,34 @@ You said you already have a free Okta account — good, this reuses it entirely,
 
 ### Step 4.3 — Enable Identity Center in AWS and connect it to Okta
 
+> Also a one-time step, done once on the management account — not once per account.
+
 1. In the AWS Console (on the **management account**), go to **IAM Identity Center** → **Enable**.
 2. Go to **Settings → Identity source → Change identity source** → choose **External identity provider**.
 3. Paste in the Okta metadata from Step 4.2 (AWS will in turn give you *its own* metadata/URLs to paste back into Okta's app configuration — this is a two-way handshake, do both sides).
 4. Back in Okta's app settings, turn on **SCIM provisioning** and generate an API token for it (Identity Center gives you a SCIM endpoint URL + access token to paste into Okta for this).
 
-Once both sides are connected, any Okta group you assign to this app shows up automatically inside AWS Identity Center — no manual user creation in AWS at all.
+Once both sides are connected, any Okta group you assign to this app shows up automatically inside AWS Identity Center — no manual user creation in AWS at all. Notice that at no point in Steps 4.2-4.3 did you pick "dev" or "prod" — this whole setup is account-agnostic; it only becomes account-specific in the next step.
 
 ### Step 4.4 — Create Okta groups and assign AWS access
+
+> **This is the step where "two accounts" actually appears.** Everything before this was one-time, org-wide setup. Here, you create two separate account assignments from that same one Identity Center instance:
+>
+> ```
+> Okta group "AWS-Dev-Admins"  → Permission Set → DEV account  (assignment #1)
+> Okta group "AWS-Prod-Admins" → Permission Set → PROD account (assignment #2)
+> ```
 
 1. In Okta, create two groups: `AWS-Dev-Admins` and `AWS-Prod-Admins`. Add yourself to both (add teammates later, to whichever group matches what they should be able to touch).
 2. In AWS Identity Center, go to **Permission sets → Create permission set** → choose the pre-built **AdministratorAccess** managed permission set (this is enough for a learning project; a real production setup would use a narrower custom permission set for the prod group).
 3. Go to **AWS accounts**, select your **dev account** → **Assign users or groups** → pick `AWS-Dev-Admins` → assign the `AdministratorAccess` permission set.
-4. Repeat for the **prod account** with `AWS-Prod-Admins`.
+4. Repeat for the **prod account** with `AWS-Prod-Admins` — this second assignment is what actually makes prod reachable at all; skipping it means Okta users can reach dev but have no way into prod, even though the same App and same Identity Center instance are already fully set up.
 
 ### Step 4.5 — Log in and configure the AWS CLI with SSO (no access keys, anywhere)
 
 Identity Center gives you a personal **AWS access portal URL** (looks like `https://d-xxxxxxxxxx.awsapps.com/start`) — find it on the Identity Center dashboard.
+
+> This is the third and final place "two accounts" shows up: when you log in below, the browser will show you a list of every AWS account you've been assigned to (both dev and prod, from Step 4.4) and ask you to pick one. That choice is what a given `--profile` remembers — which is why you set up a `dev-account` profile and a `prod-account` profile separately below, each pinned to its own account.
 
 ```bash
 aws configure sso --profile dev-account
