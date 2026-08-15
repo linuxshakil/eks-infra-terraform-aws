@@ -179,38 +179,71 @@ There are two completely different kinds of "who can do what" in this project, a
 
 This part covers the human side.
 
-> **Before you start — where do "two accounts" actually come from?** You will set up **exactly one** Okta app integration and **exactly one** AWS Identity Center instance — not two of either. IAM Identity Center is inherently a multi-account system: it's enabled once, in your Organization's management account, and from that single place it can grant access into *every* account in the Organization. The "two accounts" part happens later, in Step 4.4, where you create two separate **account assignments** (one pointing at dev, one pointing at prod) from that one instance — not two separate setups. Keep this in mind as you go through Steps 4.2-4.4 below; if you ever find yourself about to add the Okta app a second time or enable Identity Center a second time, stop — that's not needed.
+### Important — read this before creating any account: Organizations vs. standalone accounts
 
-### Step 4.1 — Create the AWS Organization and the two accounts
+There are two different ways to end up with "two AWS accounts," and they have a real, easy-to-miss financial consequence:
+
+```
+IAM Identity Center
+   |
+   +---- Standalone account instance
+   |          |
+   |          +---- Free Tier remains intact
+   |
+   +---- AWS Organizations (member accounts)
+              |
+              +---- Free Tier is NOT available — bills as pay-as-you-go from day one
+```
+
+**Why this happens:** an AWS account created through **AWS Organizations → Add an AWS account** is treated by AWS as a *member account* of an existing organization, not as a brand-new customer relationship — and AWS's Free Tier (the 12-month free allowances, and promotional credit if you have any) is only granted to genuinely new, standalone account signups. This is documented AWS behavior, not a bug, and it's exactly what caught you out — the moment you added a second account into an Organization, that member account skipped Free Tier entirely and started billing pay-as-you-go.
+
+**If you're on Free Tier / have promotional credit you want to keep — use Path B below.** It takes a few more manual steps (you set up Identity Center + Okta twice instead of once), but every AWS resource this project creates works identically either way — nothing in the Terraform code, in `infra/`, or in any later part of this guide changes based on which path you pick here. This choice only affects *how you provision the two accounts and log into them*.
+
+| | **Path A — AWS Organizations** | **Path B — Two standalone accounts** |
+|---|---|---|
+| Free Tier / credit on both accounts | ❌ Lost on every account added after the first | ✅ Kept — each is a genuine new signup |
+| Identity Center setup | Once, covers both accounts | Twice, once per account |
+| Okta app integration | Once | Twice (one per account) |
+| Good for | Teams, real organizations, "I don't care about Free Tier" | Solo learners, anyone on Free Tier or with credit to protect |
+
+Pick one path and follow only that path's steps below.
+
+---
+
+### Path A — AWS Organizations (single setup, no Free Tier on the second account)
+
+#### Step 4A.1 — Create the AWS Organization and the two accounts
 
 1. Go to [aws.amazon.com](https://aws.amazon.com) and create your first account. Any account you create first automatically becomes an **AWS Organizations management account** the moment you enable Organizations on it.
 2. In the AWS Console, go to **AWS Organizations** → **Add an AWS account** → create your second account (this reuses your first account's billing — no second credit card needed). Name the two accounts clearly, e.g. `myproject-dev` and `myproject-prod`.
 3. Note down each account's **12-digit Account ID** (top-right of the console, under your username) — you'll need these throughout this guide as **the dev account** and **the prod account**.
 
-With both accounts created and inside the same Organization, Identity Center (set up next) will be able to reach into both of them from one place — that's the "one setup, two accounts" point made above.
+With both accounts created and inside the same Organization, Identity Center (set up next) will be able to reach into both of them from one place.
 
-### Step 4.2 — Add the AWS Identity Center app in Okta
+> **Before you continue — where do "two accounts" actually come from in Identity Center?** You will set up **exactly one** Okta app integration and **exactly one** AWS Identity Center instance in this path — not two of either. IAM Identity Center is inherently a multi-account system: it's enabled once, in your Organization's management account, and from that single place it can grant access into *every* account in the Organization. The "two accounts" part happens later, in Step 4A.4, where you create two separate **account assignments** (one pointing at dev, one pointing at prod) from that one instance — not two separate setups.
+
+#### Step 4A.2 — Add the AWS Identity Center app in Okta
 
 You said you already have a free Okta account — good, this reuses it entirely, no new signup needed.
 
-> **Do this step once, total — not once per account.** This single app integration will end up granting access into both your dev and prod AWS accounts; the split between the two happens later in Step 4.4, inside AWS, not here in Okta.
+> **Do this step once, total — not once per account.** This single app integration will end up granting access into both your dev and prod AWS accounts; the split between the two happens later in Step 4A.4, inside AWS, not here in Okta.
 
 1. In the **Okta Admin Console**, go to **Applications → Browse App Catalog**, search for **"AWS IAM Identity Center"**, and click **Add Integration**.
 2. Follow Okta's setup wizard — it will show you a **metadata URL** or downloadable **XML metadata file**. Keep this tab open; you'll need it in the next step.
 3. This one app in Okta will handle both SSO login *and* automatically keeping your AWS user/group list in sync (via SCIM) — you won't need to manually create users on the AWS side later.
 
-### Step 4.3 — Enable Identity Center in AWS and connect it to Okta
+#### Step 4A.3 — Enable Identity Center in AWS and connect it to Okta
 
 > Also a one-time step, done once on the management account — not once per account.
 
 1. In the AWS Console (on the **management account**), go to **IAM Identity Center** → **Enable**.
 2. Go to **Settings → Identity source → Change identity source** → choose **External identity provider**.
-3. Paste in the Okta metadata from Step 4.2 (AWS will in turn give you *its own* metadata/URLs to paste back into Okta's app configuration — this is a two-way handshake, do both sides).
+3. Paste in the Okta metadata from Step 4A.2 (AWS will in turn give you *its own* metadata/URLs to paste back into Okta's app configuration — this is a two-way handshake, do both sides).
 4. Back in Okta's app settings, turn on **SCIM provisioning** and generate an API token for it (Identity Center gives you a SCIM endpoint URL + access token to paste into Okta for this).
 
-Once both sides are connected, any Okta group you assign to this app shows up automatically inside AWS Identity Center — no manual user creation in AWS at all. Notice that at no point in Steps 4.2-4.3 did you pick "dev" or "prod" — this whole setup is account-agnostic; it only becomes account-specific in the next step.
+Once both sides are connected, any Okta group you assign to this app shows up automatically inside AWS Identity Center — no manual user creation in AWS at all. Notice that at no point in Steps 4A.2-4A.3 did you pick "dev" or "prod" — this whole setup is account-agnostic; it only becomes account-specific in the next step.
 
-### Step 4.4 — Create Okta groups and assign AWS access
+#### Step 4A.4 — Create Okta groups and assign AWS access
 
 > **This is the step where "two accounts" actually appears.** Everything before this was one-time, org-wide setup. Here, you create two separate account assignments from that same one Identity Center instance:
 >
@@ -224,11 +257,9 @@ Once both sides are connected, any Okta group you assign to this app shows up au
 3. Go to **AWS accounts**, select your **dev account** → **Assign users or groups** → pick `AWS-Dev-Admins` → assign the `AdministratorAccess` permission set.
 4. Repeat for the **prod account** with `AWS-Prod-Admins` — this second assignment is what actually makes prod reachable at all; skipping it means Okta users can reach dev but have no way into prod, even though the same App and same Identity Center instance are already fully set up.
 
-### Step 4.5 — Log in and configure the AWS CLI with SSO (no access keys, anywhere)
+#### Step 4A.5 — Log in and configure the AWS CLI with SSO
 
-Identity Center gives you a personal **AWS access portal URL** (looks like `https://d-xxxxxxxxxx.awsapps.com/start`) — find it on the Identity Center dashboard.
-
-> This is the third and final place "two accounts" shows up: when you log in below, the browser will show you a list of every AWS account you've been assigned to (both dev and prod, from Step 4.4) and ask you to pick one. That choice is what a given `--profile` remembers — which is why you set up a `dev-account` profile and a `prod-account` profile separately below, each pinned to its own account.
+Identity Center gives you a personal **AWS access portal URL** (looks like `https://d-xxxxxxxxxx.awsapps.com/start`) — find it on the Identity Center dashboard. **This one URL works for both accounts.**
 
 ```bash
 aws configure sso --profile dev-account
@@ -237,30 +268,83 @@ aws configure sso --profile dev-account
 You'll be prompted for:
 - **SSO start URL**: the access portal URL above
 - **SSO region**: the region you enabled Identity Center in
-- Then your browser opens, you log in through **Okta** (not an AWS username/password — Okta is now the front door), and you pick the dev account + `AdministratorAccess` role
+- Then your browser opens, you log in through **Okta**, and you pick the dev account + `AdministratorAccess` role
 - Finish the prompts (default output format `json` is fine)
 
-Repeat for prod:
+Repeat for prod, using the **same** SSO start URL, just picking the prod account when the browser asks:
 
 ```bash
 aws configure sso --profile prod-account
 ```
 
-Log in for real (session tokens expire after several hours, and you'll re-run this whenever they do):
+Skip ahead to **Step 4.6** below — both paths finish the same way from here.
+
+---
+
+### Path B — Two Standalone Accounts (keeps Free Tier / credit intact)
+
+This path signs up for two genuinely independent AWS accounts and connects Okta to each one separately. A little more manual setup than Path A, but neither account is ever a member of an Organization, so neither loses Free Tier eligibility.
+
+#### Step 4B.1 — Create two independent AWS accounts
+
+1. Go to [aws.amazon.com](https://aws.amazon.com) and sign up normally — this is your **dev account**. You'll need an email address and a card.
+2. Sign up for a **second, completely separate account** the exact same way, at the exact same URL — **you'll need a different email address** for this one (AWS requires a unique email per account signup; a `+` alias like `you+awsprod@gmail.com` works fine if your email provider supports it, and still delivers to your normal inbox). This is your **prod account**.
+3. Do **not** enable AWS Organizations on either account, and don't use "Add an AWS account" anywhere — that's exactly the flow that converts an account to a non-Free-Tier member account. Two separate signups, two separate root logins, nothing linking them.
+4. Note down each account's **12-digit Account ID** (top-right of the console, under your username) as **the dev account** and **the prod account**.
+
+#### Step 4B.2 — Enable Identity Center in standalone mode, in the dev account
+
+IAM Identity Center doesn't require AWS Organizations — it can run in a single, standalone account.
+
+1. Log into the **dev account**, go to **IAM Identity Center** → **Enable**. If AWS prompts you to create an organization as part of enabling it, look for a smaller **"Enable in a standalone account"**-style option instead (AWS's wording here has changed over time; the key thing is to avoid any prompt that creates or joins an Organization). If you get stuck, this is the one moment in Path B worth a quick web search for "enable IAM Identity Center without AWS Organizations" against whatever the console shows you that day — the console layout changes more often than this concept does.
+2. Go to **Settings → Identity source → Change identity source** → **External identity provider**.
+
+#### Step 4B.3 — Add an Okta app for the dev account
+
+1. In the **Okta Admin Console**, **Applications → Browse App Catalog**, search **"AWS IAM Identity Center"**, click **Add Integration**.
+2. Name this integration something you can tell apart from the one you'll add next — e.g. **"AWS Identity Center — Dev"**.
+3. Complete the metadata exchange (Okta ↔ AWS, both directions) exactly as described in Path A's Step 4A.3, but against the **dev account's** Identity Center instance.
+4. Turn on SCIM provisioning for this integration.
+5. In Okta, create a group — e.g. `AWS-Dev-Admins` — and assign it to this app integration.
+6. Back in the dev account's Identity Center, create an `AdministratorAccess` permission set and assign it to `AWS-Dev-Admins`.
+
+#### Step 4B.4 — Repeat Steps 4B.2-4B.3, entirely separately, for the prod account
+
+Log into the **prod account** and repeat the exact same steps: enable Identity Center standalone, add a **second, separately-named** Okta app integration (e.g. **"AWS Identity Center — Prod"**), connect it to the prod account's Identity Center instance, create an `AWS-Prod-Admins` Okta group, assign it an `AdministratorAccess` permission set.
+
+You'll end up with two independent Okta app integrations and two independent AWS access portal URLs — one pair per account. This is the trade-off mentioned in the comparison table above: twice the clicking, in exchange for keeping Free Tier on both accounts.
+
+#### Step 4B.5 — Log in and configure the AWS CLI with SSO
+
+Each account has its **own** AWS access portal URL this time (`https://d-xxxxxxxxxx.awsapps.com/start`, but a different one per account) — use the dev account's for the first profile, the prod account's for the second:
+
+```bash
+aws configure sso --profile dev-account
+# SSO start URL: the DEV account's access portal URL
+# browser opens, log in via the "AWS Identity Center — Dev" Okta app
+
+aws configure sso --profile prod-account
+# SSO start URL: the PROD account's access portal URL
+# browser opens, log in via the "AWS Identity Center — Prod" Okta app
+```
+
+---
+
+### Step 4.6 — Verify both profiles, and continue
+
+From either path, log in and verify:
 
 ```bash
 aws sso login --profile dev-account
 aws sso login --profile prod-account
-```
 
-Test both:
-
-```bash
 aws sts get-caller-identity --profile dev-account
 aws sts get-caller-identity --profile prod-account
 ```
 
 Each should print a different 12-digit `Account` number. **Notice what you did *not* do anywhere in this entire part: create an IAM user, or generate an access key.** Every command in the rest of this guide that needs human AWS access uses `--profile dev-account` or `--profile prod-account`, exactly as set up here — and if your SSO session ever expires, the fix is always just `aws sso login --profile <name>` again, never a new key.
+
+> If you went with **Path B**, keep an eye on the AWS Billing dashboard in each account anyway (**Billing → Cost Explorer**), and consider setting up an **AWS Budget** with an email alert (Billing → Budgets → Create budget) at a threshold like $20 — Free Tier covers a generous baseline, but this project's EKS cluster, NAT Gateway, and RDS instance are not fully inside Free Tier's always-free allowances even on a brand-new account, so it's worth watching the first few days closely regardless of which path you took.
 
 ---
 
@@ -658,6 +742,8 @@ Running both environments 24/7:
 
 If you're just learning, the biggest thing you can do to keep costs low is **destroy the dev environment (Part 15) whenever you're not actively using it**, and only bring up prod once you actually need it running continuously.
 
+> **On Free Tier (Path B from Part 4)?** Free Tier's always-free and 12-month allowances knock a bit off this — some EC2 hours, some RDS hours on `db.t3.micro`, some data transfer — but the EKS control plane's flat $73/month fee, the NAT Gateway's hourly charge, and Multi-AZ RDS in prod are **not** part of Free Tier's typical allowances. Expect Free Tier to meaningfully reduce the numbers above, not eliminate them. Set up an AWS Budget alert (mentioned at the end of Part 4) so you see this happening in near-real-time rather than at the end of the month.
+
 ---
 
 ## Part 15 — Cleaning Up / Destroying Everything
@@ -692,6 +778,7 @@ Or trigger `destroy-dev.yml` (or `destroy-prod.yml`) from the Actions tab, type 
 | What you see | What's probably wrong | What to do |
 |---|---|---|
 | `terraform init` fails, mentions a bucket that doesn't exist | You haven't run `bootstrap` yet, or the bucket name in `backend.tf` doesn't match what bootstrap actually created | Go back to Step 6.1/6.2 |
+| You get an email saying your account was "automatically upgraded to a paid plan" and Free Tier/credit seems gone | You created your second account via **AWS Organizations → Add an AWS account** (Path A in Part 4) — member accounts don't get Free Tier | Check **Billing → Cost Explorer** to see actual spend so far; consider destroying unused resources (Part 15). For any *future* accounts, use Path B in Part 4 instead to keep Free Tier intact |
 | `terraform apply` in `apps/cluster-addons` fails with "no matches for kind Application" | This is the very first apply in this account, and the two-pass step (Step 7.1) was skipped | Run the `-target=module.cluster_addons.helm_release.argocd` apply first, then a normal apply |
 | `kubectl get nodes` shows nothing, or times out | Your kubeconfig isn't pointed at the right cluster, or you're using the wrong AWS profile | Re-run the `aws eks update-kubeconfig` command from Step 6.3, double-check `--profile` |
 | ArgoCD shows the app as `OutOfSync` and it never changes | A placeholder value (like `REPLACE_IN_OVERLAY` or `REPLACE_WITH_DEV_RDS_ENDPOINT`) is still sitting in one of the overlay files | Go back to Step 7.2 and check every file for leftover placeholders |
